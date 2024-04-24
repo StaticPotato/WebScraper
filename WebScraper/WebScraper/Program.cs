@@ -17,7 +17,7 @@ namespace WebScraper
             scraper.Init(path, url);
             try
             {
-                await scraper.Scrape(url);
+                scraper.Run();
             }
             catch (Exception)
             {

@@ -1,2 +1,3 @@
-# WebScraper
-Asignment for Tretton37 
+scrape time 3.40s 
+
+

@@ -4,13 +4,23 @@ using System.Text;
 using System.Threading.Tasks;
 using HtmlAgilityPack;
 using System.Net;
+using System.Collections.Concurrent;
 namespace WebScraper
 {
+
+    struct WebData 
+    {
+        public string m_Html;
+        public string m_Url;
+    }
     class WebScraper
     {
         string m_RootPath = "";
         string m_RootUrl = "";
         HttpClient m_Client = new HttpClient();
+        ConcurrentQueue<string> m_ParsedUrls = new ConcurrentQueue<string>();
+        bool m_CanFinish = false;
+
 
         public void Init(string rootDirectory, string rootUrl)
         {
@@ -18,59 +28,91 @@ namespace WebScraper
             m_RootUrl = rootUrl;
         }
 
-        async public Task Scrape(String url)
+        public void Run() 
         {
-            Console.WriteLine(url);
+            FetchNextHtml(m_RootUrl);
+
+            m_CanFinish = true;
+        }
+
+        async public Task FetchNextHtml(string url) 
+        {
+            if (m_ParsedUrls.Contains(url))
+            {
+                return;
+            }
             String html = m_Client.GetStringAsync(url).Result;
+
+            WebData data = new WebData();
+
+            data.m_Html = html;
+            data.m_Url = url;
+
+            m_ParsedUrls.Enqueue(url);
 
             HtmlDocument document = new HtmlDocument();
 
             document.LoadHtml(html);
+            Scrape(data);
+            var links = document.DocumentNode.SelectNodes("//@href");
+
+            foreach (var link in links)
+            {
+                string linkUrl = GetAbsolutePath("href", url, link);
+
+                if (linkUrl.Contains(".html"))
+                {
+                   await FetchNextHtml(linkUrl);
+                }
+            }
+        }
+
+        async public Task Scrape(WebData webData)
+        {
+            HtmlDocument document = new HtmlDocument();
+
+            document.LoadHtml(webData.m_Html);
 
             var links = document.DocumentNode.SelectNodes("//@href");
-            var images = document.DocumentNode.SelectNodes("//img/@src");
 
-            if (images != null)
+            ConcurrentBag<HtmlNode> concurrentLinksList = new ConcurrentBag<HtmlNode>(links);
+
+            Parallel.ForEachAsync(concurrentLinksList, new ParallelOptions { MaxDegreeOfParallelism = 4 }, async (currentNode, _) =>
             {
-                foreach(HtmlNode image in images) 
+                string linkUrl = GetAbsolutePath("href", webData.m_Url, currentNode);
+                string relativePath = GetRelativePath(linkUrl);
+
+                if (!File.Exists(m_RootPath + "/" + relativePath))
                 {
-                    string imageUrl = GetAbsolutePath("src",url,image);
-
-                    var res = await m_Client.GetAsync(imageUrl);
-
-                    string savePath = m_RootPath + "/" + GetRelativePath(imageUrl);
-
-                    byte[] imageBytes = await res.Content.ReadAsByteArrayAsync();
-
-                    string saveDirectory = savePath.Substring(0, savePath.LastIndexOf("/"));
-
-                    if (!Directory.Exists(saveDirectory))
-                    {
-                        Directory.CreateDirectory(saveDirectory);
-                    }
-
+                    await ParseLink(relativePath);
+                }
+            });
+            var images = document.DocumentNode.SelectNodes("//img/@src");
+            
+            ConcurrentBag<HtmlNode> concurrentImagesList = new ConcurrentBag<HtmlNode>(images);
+            
+            Parallel.ForEachAsync(concurrentImagesList, new ParallelOptions { MaxDegreeOfParallelism = 4 }, async (currentNode, _) =>
+            {
+                string imageUrl = GetAbsolutePath("src", webData.m_Url, currentNode);
+            
+                var res = await m_Client.GetAsync(imageUrl);
+            
+                string savePath = m_RootPath + "/" + GetRelativePath(imageUrl);
+            
+                byte[] imageBytes = await res.Content.ReadAsByteArrayAsync();
+            
+                string saveDirectory = savePath.Substring(0, savePath.LastIndexOf("/"));
+            
+                if (!Directory.Exists(saveDirectory))
+                {
+                    Directory.CreateDirectory(saveDirectory);
+                }
+                if (!File.Exists(savePath))
+                {
+                    Console.WriteLine("Scraping image: " + imageUrl);
                     File.WriteAllBytes(savePath, imageBytes);
                 }
-            }
-
-            if (links != null)
-            {
-                foreach (HtmlNode link in links)
-                {
-                    string linkUrl = GetAbsolutePath("href",url,link);
-
-                    string relativePath = GetRelativePath(linkUrl);
-
-                    if (!File.Exists(m_RootPath + "/" + relativePath))
-                    {
-                        await ParseLink(relativePath);
-                        if (linkUrl.Contains(".html"))
-                        {
-                            await Scrape(linkUrl);
-                        }
-                    }
-                }
-            }
+            });
         }
 
         async public Task ParseLink(String url)
@@ -92,6 +134,7 @@ namespace WebScraper
             {
                 using (StreamWriter outputFile = new StreamWriter(outputPath))
                 {
+                    Console.WriteLine("Scraping file: " + rootUrl);
                     await outputFile.WriteAsync(html);
                 }
             }
