@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
 using HtmlAgilityPack;
-
+using System.Net;
 namespace WebScraper
 {
     class WebScraper
@@ -28,26 +28,42 @@ namespace WebScraper
             document.LoadHtml(html);
 
             var links = document.DocumentNode.SelectNodes("//@href");
+            var images = document.DocumentNode.SelectNodes("//img/@src");
+
+            if (images != null)
+            {
+                foreach(HtmlNode image in images) 
+                {
+                    string imageUrl = GetAbsolutePath("src",url,image);
+
+                    var res = await m_Client.GetAsync(imageUrl);
+
+                    string savePath = m_RootPath + "/" + GetRelativePath(imageUrl);
+
+                    byte[] imageBytes = await res.Content.ReadAsByteArrayAsync();
+
+                    string saveDirectory = savePath.Substring(0, savePath.LastIndexOf("/"));
+
+                    if (!Directory.Exists(saveDirectory))
+                    {
+                        Directory.CreateDirectory(saveDirectory);
+                    }
+
+                    File.WriteAllBytes(savePath, imageBytes);
+                }
+            }
 
             if (links != null)
             {
                 foreach (HtmlNode link in links)
                 {
-                    string linkUrl = link.Attributes["href"].Value;
+                    string linkUrl = GetAbsolutePath("href",url,link);
 
-                    Uri baseUri = new Uri(url);
+                    string relativePath = GetRelativePath(linkUrl);
 
-                    if (!Uri.IsWellFormedUriString(linkUrl, UriKind.Absolute))
+                    if (!File.Exists(m_RootPath + "/" + relativePath))
                     {
-                        Uri absoluteUri = new Uri(baseUri, linkUrl);
-                        linkUrl = absoluteUri.ToString();
-                    }
-
-                    string[] splitUrl = linkUrl.Split(m_RootUrl);
-
-                    if (splitUrl.Length > 1 && !File.Exists(m_RootPath + "/" + splitUrl[1]))
-                    {
-                        await ParseLink(splitUrl[1]);
+                        await ParseLink(relativePath);
                         if (linkUrl.Contains(".html"))
                         {
                             await Scrape(linkUrl);
@@ -68,7 +84,6 @@ namespace WebScraper
             if (!Directory.Exists(path))
             {
                 Directory.CreateDirectory(path);
-
             }
 
             String html = m_Client.GetStringAsync(rootUrl).Result;
@@ -80,6 +95,32 @@ namespace WebScraper
                     await outputFile.WriteAsync(html);
                 }
             }
+        }
+
+        private string GetAbsolutePath(string attribute, string url, HtmlNode htmlNode) 
+        {
+            string absolutePath = htmlNode.Attributes[attribute].Value;
+
+            if (!Uri.IsWellFormedUriString(absolutePath, UriKind.Absolute))
+            {
+                Uri baseUri = new Uri(url);
+                Uri absoluteUri = new Uri(baseUri, absolutePath);
+                absolutePath = absoluteUri.ToString();
+            }
+
+            return absolutePath;
+        }
+
+        private string GetRelativePath(string url)
+        {
+            string[] splitUrl = url.Split(m_RootUrl);
+
+            if (splitUrl.Length > 1)
+            {
+                return splitUrl[1];
+            }
+
+            return url;
         }
     }
 }
