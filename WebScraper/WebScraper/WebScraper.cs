@@ -7,7 +7,6 @@ using System.Net;
 using System.Collections.Concurrent;
 namespace WebScraper
 {
-
     struct WebData 
     {
         public string m_Html;
@@ -19,20 +18,12 @@ namespace WebScraper
         string m_RootUrl = "";
         HttpClient m_Client = new HttpClient();
         ConcurrentQueue<string> m_ParsedUrls = new ConcurrentQueue<string>();
-        bool m_CanFinish = false;
 
-
-        public void Init(string rootDirectory, string rootUrl)
+        public void Run(string rootDirectory, string rootUrl) 
         {
             m_RootPath = rootDirectory;
             m_RootUrl = rootUrl;
-        }
-
-        public void Run() 
-        {
             FetchNextHtml(m_RootUrl);
-
-            m_CanFinish = true;
         }
 
         async public Task FetchNextHtml(string url) 
@@ -77,7 +68,7 @@ namespace WebScraper
 
             ConcurrentBag<HtmlNode> concurrentLinksList = new ConcurrentBag<HtmlNode>(links);
 
-            Parallel.ForEachAsync(concurrentLinksList, new ParallelOptions { MaxDegreeOfParallelism = 4 }, async (currentNode, _) =>
+            Parallel.ForEachAsync(concurrentLinksList, new ParallelOptions { MaxDegreeOfParallelism = 8 }, async (currentNode, _) =>
             {
                 string linkUrl = GetAbsolutePath("href", webData.m_Url, currentNode);
                 string relativePath = GetRelativePath(linkUrl);
@@ -91,7 +82,7 @@ namespace WebScraper
             
             ConcurrentBag<HtmlNode> concurrentImagesList = new ConcurrentBag<HtmlNode>(images);
             
-            Parallel.ForEachAsync(concurrentImagesList, new ParallelOptions { MaxDegreeOfParallelism = 4 }, async (currentNode, _) =>
+            Parallel.ForEachAsync(concurrentImagesList, new ParallelOptions { MaxDegreeOfParallelism = 8 }, async (currentNode, _) =>
             {
                 string imageUrl = GetAbsolutePath("src", webData.m_Url, currentNode);
             

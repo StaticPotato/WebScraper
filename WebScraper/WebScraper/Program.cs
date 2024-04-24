@@ -14,10 +14,10 @@ namespace WebScraper
 
             WebScraper scraper = new WebScraper();
             string path = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + "/WEBSCRAPE";
-            scraper.Init(path, url);
+
             try
             {
-                scraper.Run();
+                scraper.Run(path, url);
             }
             catch (Exception)
             {
